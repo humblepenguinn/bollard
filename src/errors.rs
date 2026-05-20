@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// Generic Docker errors
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
@@ -181,6 +182,14 @@ pub enum Error {
     /// Error emitted when the Docker socket file is not found at the expected location.
     #[error("Socket not found: {0}")]
     SocketNotFoundError(String),
+
+    /// Error emitted when a Docker context referenced by `DOCKER_CONTEXT` or the
+    /// `currentContext` field of `~/.docker/config.json` cannot be found on disk.
+    #[error("Docker context not found: {name}")]
+    DockerContextNotFoundError {
+        /// Name of the missing context.
+        name: String,
+    },
 
     /// Error emitted when a WebSocket connection fails.
     #[cfg(feature = "websocket")]
