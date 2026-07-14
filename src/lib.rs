@@ -182,6 +182,19 @@
 //!
 //! Use the `Docker::connect_with_ssl` method API to parameterise the interface.
 //!
+//! ### SSH
+//!
+//! The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
+//! `ssh://localhost` if missing.
+//!
+//! ```rust
+//! use bollard::Docker;
+//! #[cfg(feature = "ssh")]
+//! Docker::connect_with_ssh_defaults();
+//! ```
+//!
+//! Use the [`Docker::connect_with_ssh`] or [`Docker::connect_with_ssh_options`] method API to parameterise the interface.
+//!
 //! ## Examples
 //!
 //! Note: all these examples need a [Tokio
@@ -369,6 +382,11 @@ pub use crate::docker::{
     body_full, body_stream, body_try_stream, BollardRequest, ClientVersion, Docker,
     API_DEFAULT_VERSION,
 };
+
+#[cfg(feature = "ssh")]
+pub use crate::docker::SshOptions;
+#[cfg(feature = "ssh")]
+pub use openssh::KnownHosts;
 
 /// Re-exported request body and response types from `bollard-stubs`.
 ///

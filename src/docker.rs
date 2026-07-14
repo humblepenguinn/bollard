@@ -276,7 +276,9 @@ pub type RequestModifier = Arc<dyn Fn(BollardRequest) -> BollardRequest + Send +
 ///  - [`Docker::connect_with_unix_defaults`] (requires `pipe` feature, Unix only)
 ///  - [`Docker::connect_with_local_defaults`]
 ///  - [`Docker::connect_with_podman_defaults`] (Unix only)
-///  - `Docker::connect_with_ssh_defaults` (requires `ssh` feature)
+///  - [`Docker::connect_with_ssh_defaults`] (requires `ssh` feature)
+///  - [`Docker::connect_with_ssh`] (requires `ssh` feature)
+///  - [`Docker::connect_with_ssh_options`] (requires `ssh` feature)
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
@@ -1248,6 +1250,73 @@ impl Docker {
 }
 
 #[cfg(feature = "ssh")]
+#[non_exhaustive]
+/// Options for SSH connection.
+#[derive(Debug, Clone, Default)]
+pub struct SshOptions {
+    /// Path to the private key file.
+    pub keypair_path: Option<String>,
+
+    /// Path to the known hosts file.
+    pub user_known_hosts_file: Option<String>,
+
+    /// Path to the custom SSH configuration file.
+    pub config_file: Option<String>,
+
+    /// Timeout applied to establishing the TCP connection and performing the
+    /// initial SSH handshake and key exchange.
+    pub connect_timeout: Option<std::time::Duration>,
+
+    /// Controls how the SSH server's host key is verified.
+    /// See [`openssh::KnownHosts`] for the available verification policies.
+    ///
+    /// The default behavior is [`openssh::KnownHosts::Add`], which verifies known
+    /// hosts and automatically trusts previously unseen hosts.
+    ///
+    /// **Warning:** Using [`openssh::KnownHosts::Accept`] disables host key verification.
+    /// This leaves the connection susceptible to man-in-the-middle (MITM) attacks.
+    pub known_hosts_check: Option<openssh::KnownHosts>,
+}
+
+#[cfg(feature = "ssh")]
+impl SshOptions {
+    /// Create a new default set of SSH options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the path to the private key file.
+    pub fn with_keypair_path(mut self, path: String) -> Self {
+        self.keypair_path = Some(path);
+        self
+    }
+
+    /// Set the path to the known hosts file.
+    pub fn with_user_known_hosts_file(mut self, path: String) -> Self {
+        self.user_known_hosts_file = Some(path);
+        self
+    }
+
+    /// Set the path to the custom SSH configuration file.
+    pub fn with_config_file(mut self, path: String) -> Self {
+        self.config_file = Some(path);
+        self
+    }
+
+    /// Set the connection timeout.
+    pub fn with_connect_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.connect_timeout = Some(timeout);
+        self
+    }
+
+    /// Set the host key verification policy.
+    pub fn with_known_hosts_check(mut self, check: openssh::KnownHosts) -> Self {
+        self.known_hosts_check = Some(check);
+        self
+    }
+}
+
+#[cfg(feature = "ssh")]
 /// A Docker implementation typed to connect to an SSH connection.
 impl Docker {
     /// Connect using SSH using defaults that are signalled by environment variables.
@@ -1302,12 +1371,56 @@ impl Docker {
         client_version: &ClientVersion,
         keypair_path: Option<String>,
     ) -> Result<Docker, Error> {
+        let options = SshOptions {
+            keypair_path,
+            ..Default::default()
+        };
+
+        Docker::connect_with_ssh_options(addr, timeout, client_version, options)
+    }
+
+    /// Connect using SSH with custom options.
+    ///
+    /// # Arguments
+    ///
+    ///  - `addr`: connection url including scheme and port.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection.
+    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `options`: custom SSH options configured via [`SshOptions`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker, SshOptions, KnownHosts};
+    /// use std::time::Duration;
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let options = SshOptions::new()
+    ///     .with_keypair_path("/path/to/id_rsa".to_string())
+    ///     .with_user_known_hosts_file("/path/to/known_hosts".to_string())
+    ///     .with_connect_timeout(Duration::from_secs(10))
+    ///     .with_known_hosts_check(KnownHosts::Accept);
+    ///
+    /// let connection = Docker::connect_with_ssh_options(
+    ///     "ssh://user@my-custom-docker-server",
+    ///     4,
+    ///     API_DEFAULT_VERSION,
+    ///     options
+    /// ).unwrap();
+    ///
+    /// connection.ping()
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_ssh_options(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+        options: SshOptions,
+    ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("ssh://", "", 1);
 
-        let ssh_connector = match keypair_path {
-            Some(path) => crate::ssh::SshConnector::with_keypair(path.to_string()),
-            None => crate::ssh::SshConnector::new(),
-        };
+        let ssh_connector = crate::ssh::SshConnector::new(options);
 
         let client_builder = Client::builder(TokioExecutor::new());
 
